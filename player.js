@@ -1,0 +1,70 @@
+import fetch from "node-fetch";
+import { spawn } from "child_process";
+
+const API = "https://web-vt-api.miup3p.easypanel.host";
+const TOKEN = "YOUR_TOKEN_HERE"; // temporary (we’ll fix auth later)
+
+let currentProcess = null;
+
+async function getSongs() {
+  const res = await fetch(`${API}/library?type=music`, {
+    headers: {
+      Authorization: "Bearer " + TOKEN
+    }
+  });
+
+  const data = await res.json();
+  return data.items || [];
+}
+
+async function updateNowPlaying(song) {
+  await fetch(`${API}/played`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      artist: song.artist,
+      title: song.title,
+      startTime: new Date().toISOString(),
+      duration: 0
+    })
+  });
+}
+
+function playFile(url) {
+  return new Promise((resolve) => {
+    console.log("▶ Playing:", url);
+
+    currentProcess = spawn("ffplay", [
+      "-nodisp",
+      "-autoexit",
+      url
+    ]);
+
+    currentProcess.on("exit", () => {
+      resolve();
+    });
+  });
+}
+
+async function start() {
+  while (true) {
+    try {
+      const songs = await getSongs();
+
+      for (const song of songs) {
+        const url = `${API}/audio/song/${encodeURIComponent(song.name)}`;
+
+        await updateNowPlaying(song);
+        await playFile(url);
+      }
+
+    } catch (err) {
+      console.error("Playback error:", err);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+}
+
+start();
