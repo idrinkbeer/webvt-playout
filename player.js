@@ -5,6 +5,16 @@ const API = process.env.API_BASE;
 const TOKEN = process.env.TOKEN;
 
 let currentProcess = null;
+let isPlaying = false;
+
+// =====================
+// CLEAN SHUTDOWN
+// =====================
+process.on("SIGTERM", () => {
+  console.log("🛑 Shutting down...");
+  if (currentProcess) currentProcess.kill("SIGKILL");
+  process.exit(0);
+});
 
 // =====================
 // FETCH LOG LIST
@@ -41,7 +51,7 @@ async function loadLog(filename) {
 }
 
 // =====================
-// PARSE ASC LOG (robust)
+// PARSE ASC LOG
 // =====================
 function parseASC(text) {
   const lines = text.split("\n");
@@ -50,15 +60,15 @@ function parseASC(text) {
   for (const line of lines) {
     if (!line) continue;
 
-    // find ALL mp3 matches in line
     const matches = line.match(/[^\\\/]+\.mp3/gi);
     if (!matches) continue;
 
-    // ALWAYS take the LAST match (real filename)
     const name = matches[matches.length - 1].trim();
 
+    const isSweeper = name.toLowerCase().includes("sweep");
+
     items.push({
-      type: "song",
+      type: isSweeper ? "sweeper" : "song",
       name
     });
   }
@@ -85,17 +95,32 @@ function playFile(url) {
 }
 
 // =====================
+// SAFE ENCODE
+// =====================
+function encodeName(name) {
+  return encodeURIComponent(name).replace(/'/g, "%27");
+}
+
+// =====================
 // MAIN ENGINE
 // =====================
 async function start() {
   while (true) {
     try {
+      if (isPlaying) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+
+      isPlaying = true;
+
       console.log("📂 Loading logs...");
 
       const logs = await getLogs();
 
       if (!logs.length) {
         console.log("⚠️ No logs found");
+        isPlaying = false;
         await new Promise(r => setTimeout(r, 5000));
         continue;
       }
@@ -107,30 +132,36 @@ async function start() {
       const items = parseASC(text);
 
       console.log(`🎵 ${items.length} playable items`);
+      console.log("First 5:", items.slice(0, 5));
 
       if (!items.length) {
-        console.log("⚠️ Nothing playable in log");
+        console.log("⚠️ Nothing playable");
+        isPlaying = false;
         await new Promise(r => setTimeout(r, 5000));
         continue;
       }
 
-      console.log("First 5:", items.slice(0, 5));
-
       for (const item of items) {
         if (item.type === "song") {
-          const url = `${API}/audio/song/${encodeURIComponent(item.name)}`;
+          const url = `${API}/audio/song/${encodeName(item.name)}`;
           await playFile(url);
         }
 
-        // future:
-        // sweeper / vtx / etc
+        if (item.type === "sweeper") {
+          const url = `${API}/audio/song/${encodeName(item.name)}`;
+          await playFile(url);
+        }
       }
 
-      console.log("🔁 Finished log, restarting...");
-      await new Promise(r => setTimeout(r, 2000));
+      console.log("🔁 Finished log. Waiting before reload...");
+      isPlaying = false;
+
+      // wait before restarting loop
+      await new Promise(r => setTimeout(r, 5000));
 
     } catch (err) {
       console.error("Playback error:", err);
+      isPlaying = false;
       await new Promise(r => setTimeout(r, 3000));
     }
   }
