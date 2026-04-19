@@ -13,6 +13,13 @@ async function getSongs() {
     }
   });
 
+  // 🔥 debug response
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("API ERROR:", res.status, text);
+    throw new Error("API request failed");
+  }
+
   const data = await res.json();
   return data.items || [];
 }
@@ -68,3 +75,6 @@ async function start() {
 }
 
 start();
+
+
+console.log("Fetching songs...");
