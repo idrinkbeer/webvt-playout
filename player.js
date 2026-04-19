@@ -84,9 +84,7 @@ function mixTracks({ music, next, voice = null, delay = 20000 }) {
   return new Promise((resolve) => {
     console.log("🎚 Mixing:", music, "→", next, voice ? "+ VT" : "");
 
-    const args = [
-      "-i", music
-    ];
+    const args = ["-i", music];
 
     if (next) {
       args.push("-itsoffset", (delay / 1000).toString(), "-i", next);
@@ -99,21 +97,16 @@ function mixTracks({ music, next, voice = null, delay = 20000 }) {
     let filter = "";
 
     if (voice) {
-      // duck music under voice
-      filter = `
-        [0:a]volume=0.5[a0];
-        [2:a]volume=1.5[a2];
-        [a0][a2]amix=inputs=2:duration=first[aout]
-      `;
+      filter = "[0:a]volume=0.5[a0];[2:a]volume=1.5[a2];[a0][a2]amix=inputs=2:duration=first";
     } else if (next) {
-      filter = `[0:a][1:a]amix=inputs=2:duration=first`;
+      filter = "[0:a][1:a]amix=inputs=2:duration=first";
     } else {
-      filter = `[0:a]anull`;
+      filter = "[0:a]anull";
     }
 
     const ffmpeg = spawn("ffmpeg", [
       ...args,
-      "-filter_complex", filter.replace(/\n/g, ""),
+      "-filter_complex", filter,
       "-f", "wav",
       "-"
     ]);
@@ -124,9 +117,30 @@ function mixTracks({ music, next, voice = null, delay = 20000 }) {
       "-"
     ]);
 
+    // 🔥 PIPE SAFELY
     ffmpeg.stdout.pipe(ffplay.stdin);
 
-    ffmpeg.on("exit", resolve);
+    // 🔥 HANDLE PIPE BREAK
+    ffmpeg.stdout.on("error", (err) => {
+      if (err.code !== "EPIPE") {
+        console.error("FFmpeg pipe error:", err);
+      }
+    });
+
+    ffplay.stdin.on("error", (err) => {
+      if (err.code !== "EPIPE") {
+        console.error("FFplay stdin error:", err);
+      }
+    });
+
+    // 🔥 KILL ffmpeg when ffplay exits
+    ffplay.on("exit", () => {
+      if (!ffmpeg.killed) {
+        ffmpeg.kill("SIGKILL");
+      }
+      resolve();
+    });
+
     ffmpeg.on("error", resolve);
   });
 }
