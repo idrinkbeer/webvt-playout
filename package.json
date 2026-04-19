@@ -2,6 +2,9 @@
   "name": "webvt-playout",
   "version": "1.0.0",
   "type": "module",
+  "scripts": {
+    "start": "node player.js"
+  },
   "dependencies": {
     "node-fetch": "^3.3.2"
   }
