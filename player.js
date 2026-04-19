@@ -163,39 +163,49 @@ async function start() {
 
       console.log(`🎵 ${items.length} items`);
 
-      for (let i = 0; i < items.length; i++) {
-        const current = items[i];
-        const next = items[i + 1];
-        const next2 = items[i + 2];
+ for (let i = 0; i < items.length; i++) {
+  const current = items[i];
+  const next = items[i + 1];
 
-        const musicUrl = `${API}/audio/song/${encodeName(current.name)}`;
-        const nextUrl = next ? `${API}/audio/song/${encodeName(next.name)}` : null;
+  // 🔊 HANDLE SWEEPERS
+  if (current.type === "sweeper") {
+    console.log("🔊 Playing sweeper:", current.name);
 
-        let delay = 20000;
+    const sweeperUrl = `${API}/audio/song/${encodeName(current.name)}`;
 
-        if (next) {
-          const air = await getAIR(current.name);
-          if (air?.intro) {
-            delay = Math.max(air.intro * 1000, 5000);
-            console.log(`🎯 Intro: ${air.intro}s`);
-          }
-        }
+    await mixTracks({
+      music: sweeperUrl,
+      next: null,
+      delay: 0
+    });
 
-        // detect VT after song
-        let voiceUrl = null;
-        if (next && next.type === "vt") {
-          voiceUrl = `${API}/audio/song/${encodeName(next.name)}`;
-          console.log("🎙 Voice track detected");
-          i++; // skip VT in loop
-        }
+    continue;
+  }
 
-        await mixTracks({
-          music: musicUrl,
-          next: nextUrl,
-          voice: voiceUrl,
-          delay
-        });
-      }
+  const currentUrl = `${API}/audio/song/${encodeName(current.name)}`;
+  const nextUrl = next
+    ? `${API}/audio/song/${encodeName(next.name)}`
+    : null;
+
+  let delay = 20000;
+
+  if (next) {
+    const air = await getAIR(current.name);
+
+    if (air?.intro) {
+      delay = Math.max(air.intro * 1000, 5000);
+      console.log(`🎯 Intro: ${air.intro}s`);
+    } else {
+      console.log("⚠️ Using fallback mix delay");
+    }
+  }
+
+  await mixTracks({
+    music: currentUrl,
+    next: nextUrl,
+    delay
+  });
+}
 
       console.log("🔁 Restarting log...");
       await new Promise(r => setTimeout(r, 5000));
