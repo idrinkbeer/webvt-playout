@@ -15,7 +15,6 @@ async function getSongs() {
     }
   });
 
-  // 🔥 debug response
   if (!res.ok) {
     const text = await res.text();
     console.error("API ERROR:", res.status, text);
@@ -23,23 +22,29 @@ async function getSongs() {
   }
 
   const data = await res.json();
-  return data.items || [];
+
+  // ✅ your API returns array directly
+  return data || [];
 }
 
 async function updateNowPlaying(song) {
-  await fetch(`${API}/played`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + TOKEN   // 🔥 REQUIRED
-    },
-    body: JSON.stringify({
-      artist: song.artist,
-      title: song.title,
-      startTime: new Date().toISOString(),
-      duration: 0
-    })
-  });
+  try {
+    await fetch(`${API}/played`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + TOKEN
+      },
+      body: JSON.stringify({
+        artist: song.artist,
+        title: song.title,
+        startTime: new Date().toISOString(),
+        duration: 0
+      })
+    });
+  } catch (err) {
+    console.error("Now playing update failed:", err);
+  }
 }
 
 function playFile(url) {
@@ -55,22 +60,35 @@ function playFile(url) {
     currentProcess.on("exit", () => {
       resolve();
     });
+
+    currentProcess.on("error", (err) => {
+      console.error("FFplay error:", err);
+      resolve();
+    });
   });
 }
 
 async function start() {
   while (true) {
     try {
-for (const name of songs) {
-  const url = `${API}/audio/song/${encodeURIComponent(name)}`;
+      const songs = await getSongs();
 
-  await updateNowPlaying({
-    artist: "Unknown",
-    title: name
-  });
+      if (!songs.length) {
+        console.log("⚠️ No songs found");
+        await new Promise(r => setTimeout(r, 5000));
+        continue;
+      }
 
-  await playFile(url);
-}
+      for (const name of songs) {
+        const url = `${API}/audio/song/${encodeURIComponent(name)}`;
+
+        await updateNowPlaying({
+          artist: "Unknown",
+          title: name
+        });
+
+        await playFile(url);
+      }
 
     } catch (err) {
       console.error("Playback error:", err);
@@ -78,7 +96,5 @@ for (const name of songs) {
     }
   }
 }
-
-app.get("/music", auth, async (req, res) => {
 
 start();
