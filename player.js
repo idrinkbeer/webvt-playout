@@ -23,10 +23,8 @@ function encodeName(name) {
   return encodeURIComponent(name).replace(/'/g, "%27");
 }
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
 // =====================
-// API
+// API CALLS
 // =====================
 async function getLogs() {
   const res = await fetch(`${API}/logs`, {
@@ -66,25 +64,25 @@ function parseASC(text) {
     const matches = line.match(/[^\\\/]+\.mp3/gi);
     if (!matches) continue;
 
-    const raw = matches[matches.length - 1].trim();
-    const lower = raw.toLowerCase();
+    const name = matches[matches.length - 1].trim().toLowerCase();
 
     let type = "song";
-    if (lower.includes("sweep")) type = "sweeper";
-    if (lower.includes("vt")) type = "vt";
 
-    items.push({ type, name: raw });
+    if (name.includes("sweep")) type = "sweeper";
+    if (name.includes("vt")) type = "vt";
+
+    items.push({ type, name });
   }
 
   return items;
 }
 
 // =====================
-// MIX ENGINE
+// MIX ENGINE (CORE)
 // =====================
-function mixTracks({ music, next = null, voice = null, delay = 20000 }) {
+function mixTracks({ music, next, voice = null, delay = 20000 }) {
   return new Promise((resolve) => {
-    console.log("🎚 Mixing:", music, "→", next || "-", voice ? "+ overlay" : "");
+    console.log("🎚 Mixing:", music, "→", next, voice ? "+ VT" : "");
 
     const args = ["-i", music];
 
@@ -96,16 +94,13 @@ function mixTracks({ music, next = null, voice = null, delay = 20000 }) {
       args.push("-i", voice);
     }
 
-    let filter;
+    let filter = "";
 
     if (voice) {
-      // 🎙 overlay (sweeper or VT)
-      filter = "[0:a]volume=0.7[a0];[2:a]volume=1.2[a2];[a0][a2]amix=inputs=2:duration=first";
+      filter = "[0:a]volume=0.5[a0];[2:a]volume=1.5[a2];[a0][a2]amix=inputs=2:duration=first";
     } else if (next) {
-      // 🔁 transition
       filter = "[0:a][1:a]amix=inputs=2:duration=first";
     } else {
-      // 🎵 single track
       filter = "[0:a]anull";
     }
 
@@ -122,19 +117,27 @@ function mixTracks({ music, next = null, voice = null, delay = 20000 }) {
       "-"
     ]);
 
+    // 🔥 PIPE SAFELY
     ffmpeg.stdout.pipe(ffplay.stdin);
 
-    // prevent crash
+    // 🔥 HANDLE PIPE BREAK
     ffmpeg.stdout.on("error", (err) => {
-      if (err.code !== "EPIPE") console.error("FFmpeg pipe error:", err);
+      if (err.code !== "EPIPE") {
+        console.error("FFmpeg pipe error:", err);
+      }
     });
 
     ffplay.stdin.on("error", (err) => {
-      if (err.code !== "EPIPE") console.error("FFplay stdin error:", err);
+      if (err.code !== "EPIPE") {
+        console.error("FFplay stdin error:", err);
+      }
     });
 
+    // 🔥 KILL ffmpeg when ffplay exits
     ffplay.on("exit", () => {
-      if (!ffmpeg.killed) ffmpeg.kill("SIGKILL");
+      if (!ffmpeg.killed) {
+        ffmpeg.kill("SIGKILL");
+      }
       resolve();
     });
 
@@ -151,13 +154,8 @@ async function start() {
       console.log("📂 Loading logs...");
 
       const logs = await getLogs();
-      if (!logs.length) {
-        console.log("⚠️ No logs found");
-        await sleep(5000);
-        continue;
-      }
-
       const latest = logs.sort().reverse()[0];
+
       console.log("📄 Using:", latest);
 
       const text = await loadLog(latest);
@@ -165,69 +163,71 @@ async function start() {
 
       console.log(`🎵 ${items.length} items`);
 
-      for (let i = 0; i < items.length; i++) {
-        const current = items[i];
-        const next = items[i + 1];
+for (let i = 0; i < items.length; i++) {
+  const current = items[i];
 
-        const currentUrl = `${API}/audio/song/${encodeName(current.name)}`;
-        const nextUrl = next
-          ? `${API}/audio/song/${encodeName(next.name)}`
-          : null;
+  // 🔍 find next REAL song (skip sweepers/vt)
+  let nextIndex = i + 1;
+  while (
+    items[nextIndex] &&
+    (items[nextIndex].type === "sweeper" || items[nextIndex].type === "vt")
+  ) {
+    nextIndex++;
+  }
 
-        // =====================
-        // 🔊 SWEEPER / VT OVERLAY
-        // =====================
-        if ((current.type === "sweeper" || current.type === "vt") && next) {
-          console.log("🎙 Overlay:", current.name, "→", next.name);
+  const next = items[nextIndex];
 
-          await mixTracks({
-            music: nextUrl,
-            voice: currentUrl,
-            delay: 0
-          });
+  const currentUrl = `${API}/audio/song/${encodeName(current.name)}`;
+  const nextUrl = next
+    ? `${API}/audio/song/${encodeName(next.name)}`
+    : null;
 
-          i++; // skip next (already used)
-          continue;
-        }
+  // =====================
+  // 🎙 HANDLE OVERLAYS (sweeper/vt AFTER current)
+  // =====================
+  let overlay = null;
 
-        // =====================
-        // 🎵 NORMAL SONG TRANSITION
-        // =====================
-        let delay = 20000;
+  if (items[i + 1] && (items[i + 1].type === "sweeper" || items[i + 1].type === "vt")) {
+    overlay = `${API}/audio/song/${encodeName(items[i + 1].name)}`;
+    console.log("🎙 Overlay:", items[i + 1].name);
+    i++; // consume sweeper/vt
+  }
 
-        if (next) {
-          const air = await getAIR(current.name);
+  // =====================
+  // 🎵 TIMING
+  // =====================
+  let delay = 20000;
 
-          if (air?.intro) {
-            delay = Math.max(air.intro * 1000, 5000);
-            console.log(`🎯 Intro: ${air.intro}s`);
-          } else {
-            console.log("⚠️ Using fallback mix delay");
-          }
-        }
+  if (next) {
+    const air = await getAIR(current.name);
 
-        await mixTracks({
-          music: currentUrl,
-          next: nextUrl,
-          delay
-        });
-      }
+    if (air?.intro) {
+      delay = Math.max(air.intro * 1000, 5000);
+      console.log(`🎯 Intro: ${air.intro}s`);
+    } else {
+      console.log("⚠️ Using fallback mix delay");
+    }
+  }
+
+  // =====================
+  // 🎚 MIX
+  // =====================
+  await mixTracks({
+    music: currentUrl,
+    next: nextUrl,
+    voice: overlay,
+    delay
+  });
+}
 
       console.log("🔁 Restarting log...");
-      await sleep(5000);
+      await new Promise(r => setTimeout(r, 5000));
 
     } catch (err) {
       console.error("❌ Error:", err);
-      await sleep(3000);
+      await new Promise(r => setTimeout(r, 3000));
     }
   }
 }
 
 start();
-
-// =====================
-// GLOBAL SAFETY
-// =====================
-process.on("uncaughtException", (err) => {
-  console.error("🔥 Uncaught:", err);
-});
