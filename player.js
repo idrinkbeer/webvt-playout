@@ -106,53 +106,28 @@ async function getAIR(name) {
 // =====================
 // PLAY WITH INTRO TIMING
 // =====================
-async function playFile(url, name, nextUrl = null, nextName = null) {
-  return new Promise(async (resolve) => {
-    console.log("▶ Playing:", name);
+function playWithMix(currentUrl, nextUrl, delayMs) {
+  return new Promise((resolve) => {
+    console.log("▶ Mixing:", currentUrl, "→", nextUrl);
 
-    // 🔥 kill any previous audio (prevents overlap bugs on restart)
-    if (currentProcess) {
-      currentProcess.kill("SIGKILL");
-      currentProcess = null;
-    }
+    const delay = Math.max(delayMs, 0);
 
-    const main = spawn("ffplay", [
-      "-nodisp",
-      "-autoexit",
-      url
+    const process = spawn("ffmpeg", [
+      "-i", currentUrl,
+      "-itsoffset", (delay / 1000).toString(),
+      "-i", nextUrl,
+      "-filter_complex",
+      "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2",
+      "-f", "null",
+      "-"
     ]);
 
-    currentProcess = main;
+    process.stderr.on("data", (d) => {
+      // optional debug
+    });
 
-    // =====================
-    // AIR INTRO TIMING
-    // =====================
-    if (nextUrl && nextName) {
-      let startTime = 20000; // fallback (20s)
-
-      const air = await getAIR(name);
-
-      if (air && typeof air.intro === "number") {
-        startTime = Math.max(air.intro * 1000, 5000);
-        console.log(`🎯 Using intro (${air.intro}s)`);
-      } else {
-        console.log("⚠️ No AIR intro, using fallback");
-      }
-
-      setTimeout(() => {
-        console.log("🔀 Starting next:", nextName);
-
-        spawn("ffplay", [
-          "-nodisp",
-          "-autoexit",
-          nextUrl
-        ]);
-
-      }, startTime);
-    }
-
-    main.on("exit", resolve);
-    main.on("error", resolve);
+    process.on("exit", resolve);
+    process.on("error", resolve);
   });
 }
 
