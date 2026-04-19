@@ -9,7 +9,7 @@ let currentProcess = null;
 async function getSongs() {
   console.log("Fetching songs...");
 
-  const res = await fetch(`${API_BASE}/library?type=music`), {
+  const res = await fetch(`${API}/music`, {
     headers: {
       Authorization: "Bearer " + TOKEN
     }
@@ -61,14 +61,16 @@ function playFile(url) {
 async function start() {
   while (true) {
     try {
-      const songs = await getSongs();
+for (const name of songs) {
+  const url = `${API}/audio/song/${encodeURIComponent(name)}`;
 
-      for (const song of songs) {
-        const url = `${API}/audio/song/${encodeURIComponent(song.name)}`;
+  await updateNowPlaying({
+    artist: "Unknown",
+    title: name
+  });
 
-        await updateNowPlaying(song);
-        await playFile(url);
-      }
+  await playFile(url);
+}
 
     } catch (err) {
       console.error("Playback error:", err);
@@ -76,5 +78,7 @@ async function start() {
     }
   }
 }
+
+app.get("/music", auth, async (req, res) => {
 
 start();
