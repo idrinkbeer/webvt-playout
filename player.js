@@ -48,14 +48,14 @@ function parseASC(text) {
   const items = [];
 
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!line) continue;
 
-    // grab last .mp3 in the line
-    const match = trimmed.match(/([^\\]+\.mp3)$/i);
-    if (!match) continue;
+    // find ALL mp3 matches in line
+    const matches = line.match(/[^\\\/]+\.mp3/gi);
+    if (!matches) continue;
 
-    const name = match[1].trim();
+    // ALWAYS take the LAST match (real filename)
+    const name = matches[matches.length - 1].trim();
 
     items.push({
       type: "song",
