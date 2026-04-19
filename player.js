@@ -91,24 +91,49 @@ function parseASC(text) {
 // =====================
 // PLAY FILE
 // =====================
-function playFile(url) {
+function playFile(url, nextUrl = null) {
   return new Promise((resolve) => {
-    // 🔥 kill any previous audio
-    if (currentProcess) {
-      currentProcess.kill("SIGKILL");
-      currentProcess = null;
-    }
-
     console.log("▶ Playing:", url);
 
-    currentProcess = spawn("ffplay", [
+    const main = spawn("ffplay", [
       "-nodisp",
       "-autoexit",
       url
     ]);
 
-    currentProcess.on("exit", resolve);
-    currentProcess.on("error", resolve);
+    currentProcess = main;
+
+    let overlapped = false;
+
+    main.stderr.on("data", (data) => {
+      const msg = data.toString();
+
+      // crude duration detection
+      const match = msg.match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
+
+      if (match && nextUrl && !overlapped) {
+        const mins = parseInt(match[2]);
+        const secs = parseFloat(match[3]);
+        const total = mins * 60 + secs;
+
+        // 🔥 start next track ~5s before end
+        setTimeout(() => {
+          console.log("🔀 Starting next early:", nextUrl);
+
+          spawn("ffplay", [
+            "-nodisp",
+            "-autoexit",
+            nextUrl
+          ]);
+
+        }, (total - 5) * 1000);
+
+        overlapped = true;
+      }
+    });
+
+    main.on("exit", resolve);
+    main.on("error", resolve);
   });
 }
 
