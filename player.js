@@ -206,6 +206,22 @@ for (let i = 0; i < items.length; i++) {
   // 🎯 timing
   let delay = 20000;
 
+if (next) {
+  const duration = await getDuration(currentUrl);
+  const air = await getAIR(current.name);
+
+  if (air?.intro) {
+    delay = duration * 1000 - (air.intro * 1000);
+    console.log(`🎯 Intro timing: ${air.intro}s`);
+  } else {
+    delay = duration * 1000 - 8000; // fallback: last 8 seconds
+    console.log("⚠️ Using duration fallback");
+  }
+
+  // safety clamp
+  delay = Math.max(delay, 5000);
+}
+
   if (next) {
     const air = await getAIR(current.name);
 
