@@ -80,7 +80,7 @@ async function start() {
       }
 
       for (const name of songs) {
-        const url = `${API}/audio/song/${encodeURIComponent(name)}`;
+        const url = `${API}/audio/song/${encodeURIComponent(name).replace(/'/g, "%27")}`;
 
         await updateNowPlaying({
           artist: "Unknown",
