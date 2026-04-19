@@ -6,8 +6,6 @@ const API = process.env.API_BASE;
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 
-let currentProcess = null;
-
 // =====================
 // KEEP CONTAINER ALIVE
 // =====================
@@ -19,83 +17,35 @@ http.createServer((req, res) => {
 });
 
 // =====================
-// SAFE ENCODE
+// HELPERS
 // =====================
 function encodeName(name) {
   return encodeURIComponent(name).replace(/'/g, "%27");
 }
 
 // =====================
-// FETCH LOG LIST
+// API CALLS
 // =====================
 async function getLogs() {
   const res = await fetch(`${API}/logs`, {
     headers: { Authorization: "Bearer " + TOKEN }
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("LOG ERROR:", res.status, text);
-    throw new Error("Failed to load logs");
-  }
-
   return await res.json();
 }
 
-// =====================
-// LOAD LOG CONTENT
-// =====================
 async function loadLog(filename) {
   const res = await fetch(`${API}/logs/${filename}`, {
     headers: { Authorization: "Bearer " + TOKEN }
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("LOG FILE ERROR:", res.status, text);
-    throw new Error("Failed to load log file");
-  }
-
   return await res.text();
 }
 
-// =====================
-// PARSE ASC LOG
-// =====================
-function parseASC(text) {
-  const lines = text.split("\n");
-  const items = [];
-
-  for (const line of lines) {
-    if (!line) continue;
-
-    const matches = line.match(/[^\\\/]+\.mp3/gi);
-    if (!matches) continue;
-
-    const name = matches[matches.length - 1].trim();
-
-    const isSweeper = name.toLowerCase().includes("sweep");
-
-    items.push({
-      type: isSweeper ? "sweeper" : "song",
-      name
-    });
-  }
-
-  return items;
-}
-
-// =====================
-// GET AIR TAGS
-// =====================
 async function getAIR(name) {
   try {
     const res = await fetch(`${API}/music/tag/${encodeName(name)}`, {
       headers: { Authorization: "Bearer " + TOKEN }
     });
-
     if (!res.ok) return null;
-
     const data = await res.json();
     return data.air || null;
   } catch {
@@ -104,20 +54,66 @@ async function getAIR(name) {
 }
 
 // =====================
-// PLAY WITH INTRO TIMING
+// PARSE LOG
 // =====================
-function playWithMix(currentUrl, nextUrl, delayMs) {
-  return new Promise((resolve) => {
-    console.log("▶ Mixing:", currentUrl, "→", nextUrl);
+function parseASC(text) {
+  const lines = text.split("\n");
+  const items = [];
 
-    const delay = Math.max(delayMs, 0);
+  for (const line of lines) {
+    const matches = line.match(/[^\\\/]+\.mp3/gi);
+    if (!matches) continue;
+
+    const name = matches[matches.length - 1].trim().toLowerCase();
+
+    let type = "song";
+
+    if (name.includes("sweep")) type = "sweeper";
+    if (name.includes("vt")) type = "vt";
+
+    items.push({ type, name });
+  }
+
+  return items;
+}
+
+// =====================
+// MIX ENGINE (CORE)
+// =====================
+function mixTracks({ music, next, voice = null, delay = 20000 }) {
+  return new Promise((resolve) => {
+    console.log("🎚 Mixing:", music, "→", next, voice ? "+ VT" : "");
+
+    const args = [
+      "-i", music
+    ];
+
+    if (next) {
+      args.push("-itsoffset", (delay / 1000).toString(), "-i", next);
+    }
+
+    if (voice) {
+      args.push("-i", voice);
+    }
+
+    let filter = "";
+
+    if (voice) {
+      // duck music under voice
+      filter = `
+        [0:a]volume=0.5[a0];
+        [2:a]volume=1.5[a2];
+        [a0][a2]amix=inputs=2:duration=first[aout]
+      `;
+    } else if (next) {
+      filter = `[0:a][1:a]amix=inputs=2:duration=first`;
+    } else {
+      filter = `[0:a]anull`;
+    }
 
     const ffmpeg = spawn("ffmpeg", [
-      "-i", currentUrl,
-      "-itsoffset", (delay / 1000).toString(),
-      "-i", nextUrl,
-      "-filter_complex",
-      "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2",
+      ...args,
+      "-filter_complex", filter.replace(/\n/g, ""),
       "-f", "wav",
       "-"
     ]);
@@ -144,37 +140,54 @@ async function start() {
       console.log("📂 Loading logs...");
 
       const logs = await getLogs();
-
-      if (!logs.length) {
-        console.log("⚠️ No logs found");
-        await new Promise(r => setTimeout(r, 5000));
-        continue;
-      }
-
       const latest = logs.sort().reverse()[0];
-      console.log("📄 Using log:", latest);
+
+      console.log("📄 Using:", latest);
 
       const text = await loadLog(latest);
       const items = parseASC(text);
 
-      console.log(`🎵 ${items.length} playable items`);
-      console.log("First 5:", items.slice(0, 5));
+      console.log(`🎵 ${items.length} items`);
 
-      if (!items.length) {
-        await new Promise(r => setTimeout(r, 5000));
-        continue;
+      for (let i = 0; i < items.length; i++) {
+        const current = items[i];
+        const next = items[i + 1];
+        const next2 = items[i + 2];
+
+        const musicUrl = `${API}/audio/song/${encodeName(current.name)}`;
+        const nextUrl = next ? `${API}/audio/song/${encodeName(next.name)}` : null;
+
+        let delay = 20000;
+
+        if (next) {
+          const air = await getAIR(current.name);
+          if (air?.intro) {
+            delay = Math.max(air.intro * 1000, 5000);
+            console.log(`🎯 Intro: ${air.intro}s`);
+          }
+        }
+
+        // detect VT after song
+        let voiceUrl = null;
+        if (next && next.type === "vt") {
+          voiceUrl = `${API}/audio/song/${encodeName(next.name)}`;
+          console.log("🎙 Voice track detected");
+          i++; // skip VT in loop
+        }
+
+        await mixTracks({
+          music: musicUrl,
+          next: nextUrl,
+          voice: voiceUrl,
+          delay
+        });
       }
 
-for (let i = 0; i < items.length; i++) {
-
-}
-      }
-
-      console.log("🔁 Finished log, restarting...");
+      console.log("🔁 Restarting log...");
       await new Promise(r => setTimeout(r, 5000));
 
     } catch (err) {
-      console.error("Playback error:", err);
+      console.error("❌ Error:", err);
       await new Promise(r => setTimeout(r, 3000));
     }
   }
