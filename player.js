@@ -7,7 +7,7 @@ const TOKEN = process.env.TOKEN;
 let currentProcess = null;
 
 async function getSongs() {
-  const res = await fetch(`${API}/library?type=music`, {
+  const res = await fetch(`${API}/api/library?type=music`, {
     headers: {
       Authorization: "Bearer " + TOKEN
     }
@@ -25,7 +25,7 @@ async function getSongs() {
 }
 
 async function updateNowPlaying(song) {
-  await fetch(`${API}/played`, {
+  await fetch(`${API}/api/played`, ...
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -61,7 +61,7 @@ async function start() {
       const songs = await getSongs();
 
       for (const song of songs) {
-        const url = `${API}/audio/song/${encodeURIComponent(song.name)}`;
+        const url = `${API}/api/audio/song/${encodeURIComponent(song.name)}`;
 
         await updateNowPlaying(song);
         await playFile(url);
