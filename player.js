@@ -51,20 +51,14 @@ function parseASC(text) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // Look for anything ending in .mp3
-    const mp3Match = trimmed.match(/(.+\.mp3)/i);
-    if (!mp3Match) continue;
+    // grab last .mp3 in the line
+    const match = trimmed.match(/([^\\]+\.mp3)$/i);
+    if (!match) continue;
 
-    const name = mp3Match[1].trim();
-
-    // try to detect type
-    let type = "unknown";
-    if (/song|music/i.test(trimmed)) type = "song";
-    if (/spot|sweeper/i.test(trimmed)) type = "sweeper";
-    if (/vtx|voice/i.test(trimmed)) type = "vtx";
+    const name = match[1].trim();
 
     items.push({
-      type,
+      type: "song",
       name
     });
   }
