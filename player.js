@@ -25,10 +25,11 @@ async function getSongs() {
 }
 
 async function updateNowPlaying(song) {
-  await fetch(`${API}/api/played`, ...
+  await fetch(`${API}/api/played`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + TOKEN   // 🔥 REQUIRED
     },
     body: JSON.stringify({
       artist: song.artist,
