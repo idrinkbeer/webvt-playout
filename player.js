@@ -41,27 +41,29 @@ async function loadLog(filename) {
 }
 
 // =====================
-// PARSE ASC LOG
+// PARSE ASC LOG (robust)
 // =====================
 function parseASC(text) {
   const lines = text.split("\n");
   const items = [];
 
   for (const line of lines) {
-    const parts = line.trim().split(/\s+/);
+    const trimmed = line.trim();
+    if (!trimmed) continue;
 
-    if (parts.length < 3) continue;
+    // Look for anything ending in .mp3
+    const mp3Match = trimmed.match(/(.+\.mp3)/i);
+    if (!mp3Match) continue;
 
-    const time = parts[0];
-    const type = parts[1].toLowerCase();
+    const name = mp3Match[1].trim();
 
-    // crude filename detection
-    const name = parts.slice(2).join(" ");
-
-    if (!name.endsWith(".mp3")) continue;
+    // try to detect type
+    let type = "unknown";
+    if (/song|music/i.test(trimmed)) type = "song";
+    if (/spot|sweeper/i.test(trimmed)) type = "sweeper";
+    if (/vtx|voice/i.test(trimmed)) type = "vtx";
 
     items.push({
-      time,
       type,
       name
     });
@@ -104,14 +106,21 @@ async function start() {
         continue;
       }
 
-      // pick latest log
       const latest = logs.sort().reverse()[0];
       console.log("📄 Using log:", latest);
 
       const text = await loadLog(latest);
       const items = parseASC(text);
 
-      console.log(`🎵 ${items.length} items loaded`);
+      console.log(`🎵 ${items.length} playable items`);
+
+      if (!items.length) {
+        console.log("⚠️ Nothing playable in log");
+        await new Promise(r => setTimeout(r, 5000));
+        continue;
+      }
+
+      console.log("First 5:", items.slice(0, 5));
 
       for (const item of items) {
         if (item.type === "song") {
@@ -120,8 +129,11 @@ async function start() {
         }
 
         // future:
-        // sweeper / vt / etc
+        // sweeper / vtx / etc
       }
+
+      console.log("🔁 Finished log, restarting...");
+      await new Promise(r => setTimeout(r, 2000));
 
     } catch (err) {
       console.error("Playback error:", err);
