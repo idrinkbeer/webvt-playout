@@ -166,33 +166,7 @@ async function start() {
       }
 
 for (let i = 0; i < items.length; i++) {
-  const current = items[i];
-  const next = items[i + 1];
 
-  const currentUrl = `${API}/audio/song/${encodeName(current.name)}`;
-  const nextUrl = next
-    ? `${API}/audio/song/${encodeName(next.name)}`
-    : null;
-
-  let delay = 20000; // fallback
-
-  if (next) {
-    const air = await getAIR(current.name);
-
-    if (air && typeof air.intro === "number") {
-      delay = air.intro * 1000;
-      console.log(`🎯 Intro: ${air.intro}s`);
-    } else {
-      console.log("⚠️ Using fallback mix delay");
-    }
-  }
-
-  if (nextUrl) {
-    await playWithMix(currentUrl, nextUrl, delay);
-  } else {
-    await playWithMix(currentUrl, currentUrl, 999999);
-  }
-}
 }
       }
 
