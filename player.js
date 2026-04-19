@@ -112,7 +112,7 @@ function playWithMix(currentUrl, nextUrl, delayMs) {
 
     const delay = Math.max(delayMs, 0);
 
-    const process = spawn("ffmpeg", [
+    const ffmpeg = spawn("ffmpeg", [
       "-i", currentUrl,
       "-itsoffset", (delay / 1000).toString(),
       "-i", nextUrl,
@@ -122,17 +122,16 @@ function playWithMix(currentUrl, nextUrl, delayMs) {
       "-"
     ]);
 
-    // 🔥 pipe to speaker using ffplay
-    const player = spawn("ffplay", [
+    const ffplay = spawn("ffplay", [
       "-nodisp",
       "-autoexit",
       "-"
     ]);
 
-    process.stdout.pipe(player.stdin);
+    ffmpeg.stdout.pipe(ffplay.stdin);
 
-    process.on("exit", resolve);
-    process.on("error", resolve);
+    ffmpeg.on("exit", resolve);
+    ffmpeg.on("error", resolve);
   });
 }
 
