@@ -7,6 +7,16 @@ const TOKEN = process.env.TOKEN;
 let currentProcess = null;
 let isPlaying = false;
 
+
+import http from "http";
+
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("OK");
+}).listen(3000, () => {
+  console.log("🌐 Health server running on port 3000");
+});
+
 // =====================
 // CLEAN SHUTDOWN
 // =====================
