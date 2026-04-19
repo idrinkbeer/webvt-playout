@@ -1,3 +1,15 @@
+import http from "http";
+
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("OK");
+}).listen(PORT, () => {
+  console.log(`🌐 Health server running on port ${PORT}`);
+});
+
+
 import fetch from "node-fetch";
 import { spawn } from "child_process";
 
@@ -6,16 +18,6 @@ const TOKEN = process.env.TOKEN;
 
 let currentProcess = null;
 let isPlaying = false;
-
-
-import http from "http";
-
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end("OK");
-}).listen(3000, () => {
-  console.log("🌐 Health server running on port 3000");
-});
 
 // =====================
 // CLEAN SHUTDOWN
