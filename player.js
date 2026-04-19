@@ -236,4 +236,27 @@ for (let i = 0; i < items.length; i++) {
   }
 }
 
+
+async function getDuration(url) {
+  return new Promise((resolve) => {
+    const probe = spawn("ffprobe", [
+      "-v", "error",
+      "-show_entries", "format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=1",
+      url
+    ]);
+
+    let output = "";
+
+    probe.stdout.on("data", (d) => {
+      output += d.toString();
+    });
+
+    probe.on("exit", () => {
+      const seconds = parseFloat(output);
+      resolve(isNaN(seconds) ? 180 : seconds); // fallback
+    });
+  });
+}
+
 start();
