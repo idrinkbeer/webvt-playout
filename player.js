@@ -74,8 +74,10 @@ function parseASC(text) {
 
     const name = matches[matches.length - 1].trim();
 
+    const isSweeper = name.toLowerCase().includes("sweep");
+
     items.push({
-      type: "song",
+      type: isSweeper ? "sweeper" : "song",
       name
     });
   }
@@ -84,11 +86,35 @@ function parseASC(text) {
 }
 
 // =====================
-// PLAY WITH OVERLAP
+// GET AIR TAGS
 // =====================
-function playFile(url, nextUrl = null) {
-  return new Promise((resolve) => {
-    console.log("▶ Playing:", url);
+async function getAIR(name) {
+  try {
+    const res = await fetch(`${API}/music/tag/${encodeName(name)}`, {
+      headers: { Authorization: "Bearer " + TOKEN }
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    return data.air || null;
+  } catch {
+    return null;
+  }
+}
+
+// =====================
+// PLAY WITH INTRO TIMING
+// =====================
+async function playFile(url, name, nextUrl = null, nextName = null) {
+  return new Promise(async (resolve) => {
+    console.log("▶ Playing:", name);
+
+    // 🔥 kill any previous audio (prevents overlap bugs on restart)
+    if (currentProcess) {
+      currentProcess.kill("SIGKILL");
+      currentProcess = null;
+    }
 
     const main = spawn("ffplay", [
       "-nodisp",
@@ -98,10 +124,23 @@ function playFile(url, nextUrl = null) {
 
     currentProcess = main;
 
-    // 🔥 simple reliable overlap
-    if (nextUrl) {
+    // =====================
+    // AIR INTRO TIMING
+    // =====================
+    if (nextUrl && nextName) {
+      let startTime = 20000; // fallback (20s)
+
+      const air = await getAIR(name);
+
+      if (air && typeof air.intro === "number") {
+        startTime = Math.max(air.intro * 1000, 5000);
+        console.log(`🎯 Using intro (${air.intro}s)`);
+      } else {
+        console.log("⚠️ No AIR intro, using fallback");
+      }
+
       setTimeout(() => {
-        console.log("🔀 Starting next early:", nextUrl);
+        console.log("🔀 Starting next:", nextName);
 
         spawn("ffplay", [
           "-nodisp",
@@ -109,7 +148,7 @@ function playFile(url, nextUrl = null) {
           nextUrl
         ]);
 
-      }, 25000); // 25 sec into song (adjustable)
+      }, startTime);
     }
 
     main.on("exit", resolve);
@@ -156,7 +195,12 @@ async function start() {
           ? `${API}/audio/song/${encodeName(next.name)}`
           : null;
 
-        await playFile(url, nextUrl);
+        await playFile(
+          url,
+          current.name,
+          nextUrl,
+          next?.name
+        );
       }
 
       console.log("🔁 Finished log, restarting...");
