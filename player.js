@@ -6,47 +6,73 @@ const TOKEN = process.env.TOKEN;
 
 let currentProcess = null;
 
-async function getSongs() {
-  console.log("Fetching songs...");
-
-  const res = await fetch(`${API}/music`, {
-    headers: {
-      Authorization: "Bearer " + TOKEN
-    }
+// =====================
+// FETCH LOG LIST
+// =====================
+async function getLogs() {
+  const res = await fetch(`${API}/logs`, {
+    headers: { Authorization: "Bearer " + TOKEN }
   });
 
   if (!res.ok) {
     const text = await res.text();
-    console.error("API ERROR:", res.status, text);
-    throw new Error("API request failed");
+    console.error("LOG ERROR:", res.status, text);
+    throw new Error("Failed to load logs");
   }
 
-  const data = await res.json();
-
-  // ✅ your API returns array directly
-  return data || [];
+  return await res.json();
 }
 
-async function updateNowPlaying(song) {
-  try {
-    await fetch(`${API}/played`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + TOKEN
-      },
-      body: JSON.stringify({
-        artist: song.artist,
-        title: song.title,
-        startTime: new Date().toISOString(),
-        duration: 0
-      })
+// =====================
+// LOAD LOG CONTENT
+// =====================
+async function loadLog(filename) {
+  const res = await fetch(`${API}/logs/${filename}`, {
+    headers: { Authorization: "Bearer " + TOKEN }
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("LOG FILE ERROR:", res.status, text);
+    throw new Error("Failed to load log file");
+  }
+
+  return await res.text();
+}
+
+// =====================
+// PARSE ASC LOG
+// =====================
+function parseASC(text) {
+  const lines = text.split("\n");
+  const items = [];
+
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+
+    if (parts.length < 3) continue;
+
+    const time = parts[0];
+    const type = parts[1].toLowerCase();
+
+    // crude filename detection
+    const name = parts.slice(2).join(" ");
+
+    if (!name.endsWith(".mp3")) continue;
+
+    items.push({
+      time,
+      type,
+      name
     });
-  } catch (err) {
-    console.error("Now playing update failed:", err);
   }
+
+  return items;
 }
 
+// =====================
+// PLAY FILE
+// =====================
 function playFile(url) {
   return new Promise((resolve) => {
     console.log("▶ Playing:", url);
@@ -57,37 +83,44 @@ function playFile(url) {
       url
     ]);
 
-    currentProcess.on("exit", () => {
-      resolve();
-    });
-
-    currentProcess.on("error", (err) => {
-      console.error("FFplay error:", err);
-      resolve();
-    });
+    currentProcess.on("exit", resolve);
+    currentProcess.on("error", resolve);
   });
 }
 
+// =====================
+// MAIN ENGINE
+// =====================
 async function start() {
   while (true) {
     try {
-      const songs = await getSongs();
+      console.log("📂 Loading logs...");
 
-      if (!songs.length) {
-        console.log("⚠️ No songs found");
+      const logs = await getLogs();
+
+      if (!logs.length) {
+        console.log("⚠️ No logs found");
         await new Promise(r => setTimeout(r, 5000));
         continue;
       }
 
-      for (const name of songs) {
-        const url = `${API}/audio/song/${encodeURIComponent(name).replace(/'/g, "%27")}`;
+      // pick latest log
+      const latest = logs.sort().reverse()[0];
+      console.log("📄 Using log:", latest);
 
-        await updateNowPlaying({
-          artist: "Unknown",
-          title: name
-        });
+      const text = await loadLog(latest);
+      const items = parseASC(text);
 
-        await playFile(url);
+      console.log(`🎵 ${items.length} items loaded`);
+
+      for (const item of items) {
+        if (item.type === "song") {
+          const url = `${API}/audio/song/${encodeURIComponent(item.name)}`;
+          await playFile(url);
+        }
+
+        // future:
+        // sweeper / vt / etc
       }
 
     } catch (err) {
