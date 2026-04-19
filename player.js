@@ -91,6 +91,12 @@ function parseASC(text) {
 // =====================
 function playFile(url) {
   return new Promise((resolve) => {
+    // 🔥 kill any previous audio
+    if (currentProcess) {
+      currentProcess.kill("SIGKILL");
+      currentProcess = null;
+    }
+
     console.log("▶ Playing:", url);
 
     currentProcess = spawn("ffplay", [
