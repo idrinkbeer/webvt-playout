@@ -98,33 +98,19 @@ function playFile(url, nextUrl = null) {
 
     currentProcess = main;
 
-    let overlapStarted = false;
+    // 🔥 simple reliable overlap
+    if (nextUrl) {
+      setTimeout(() => {
+        console.log("🔀 Starting next early:", nextUrl);
 
-    main.stderr.on("data", (data) => {
-      const msg = data.toString();
+        spawn("ffplay", [
+          "-nodisp",
+          "-autoexit",
+          nextUrl
+        ]);
 
-      const match = msg.match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
-
-      if (match && nextUrl && !overlapStarted) {
-        const mins = parseInt(match[2]);
-        const secs = parseFloat(match[3]);
-        const total = mins * 60 + secs;
-
-        // start next 5 sec early
-        setTimeout(() => {
-          console.log("🔀 Starting next early:", nextUrl);
-
-          spawn("ffplay", [
-            "-nodisp",
-            "-autoexit",
-            nextUrl
-          ]);
-
-        }, Math.max((total - 5) * 1000, 0));
-
-        overlapStarted = true;
-      }
-    });
+      }, 25000); // 25 sec into song (adjustable)
+    }
 
     main.on("exit", resolve);
     main.on("error", resolve);
