@@ -118,13 +118,18 @@ function playWithMix(currentUrl, nextUrl, delayMs) {
       "-i", nextUrl,
       "-filter_complex",
       "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2",
-      "-f", "null",
+      "-f", "wav",
       "-"
     ]);
 
-    process.stderr.on("data", (d) => {
-      // optional debug
-    });
+    // 🔥 pipe to speaker using ffplay
+    const player = spawn("ffplay", [
+      "-nodisp",
+      "-autoexit",
+      "-"
+    ]);
+
+    process.stdout.pipe(player.stdin);
 
     process.on("exit", resolve);
     process.on("error", resolve);
@@ -161,21 +166,35 @@ async function start() {
         continue;
       }
 
-      for (let i = 0; i < items.length; i++) {
-        const current = items[i];
-        const next = items[i + 1];
+for (let i = 0; i < items.length; i++) {
+  const current = items[i];
+  const next = items[i + 1];
 
-        const url = `${API}/audio/song/${encodeName(current.name)}`;
-        const nextUrl = next
-          ? `${API}/audio/song/${encodeName(next.name)}`
-          : null;
+  const currentUrl = `${API}/audio/song/${encodeName(current.name)}`;
+  const nextUrl = next
+    ? `${API}/audio/song/${encodeName(next.name)}`
+    : null;
 
-        await playFile(
-          url,
-          current.name,
-          nextUrl,
-          next?.name
-        );
+  let delay = 20000; // fallback
+
+  if (next) {
+    const air = await getAIR(current.name);
+
+    if (air && typeof air.intro === "number") {
+      delay = air.intro * 1000;
+      console.log(`🎯 Intro: ${air.intro}s`);
+    } else {
+      console.log("⚠️ Using fallback mix delay");
+    }
+  }
+
+  if (nextUrl) {
+    await playWithMix(currentUrl, nextUrl, delay);
+  } else {
+    await playWithMix(currentUrl, currentUrl, 999999);
+  }
+}
+}
       }
 
       console.log("🔁 Finished log, restarting...");
