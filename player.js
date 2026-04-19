@@ -99,7 +99,11 @@ function mixTracks({ music, next, voice = null, delay = 20000 }) {
     if (voice) {
       filter = "[0:a]volume=0.5[a0];[2:a]volume=1.5[a2];[a0][a2]amix=inputs=2:duration=first";
     } else if (next) {
-      filter = "[0:a][1:a]amix=inputs=2:duration=first";
+      filter = `
+[0:a]afade=t=out:st=${(delay/1000)-2}:d=2[a0];
+[1:a]afade=t=in:st=0:d=2[a1];
+[a0][a1]amix=inputs=2:duration=first
+`.replace(/\n/g, "");
     } else {
       filter = "[0:a]anull";
     }
