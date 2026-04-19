@@ -2,7 +2,7 @@ FROM node:18
 
 WORKDIR /app
 
-# install ffmpeg
+# install ffmpeg (required)
 RUN apt-get update && apt-get install -y ffmpeg
 
 COPY package*.json ./
