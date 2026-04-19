@@ -7,6 +7,8 @@ const TOKEN = process.env.TOKEN;
 let currentProcess = null;
 
 async function getSongs() {
+  console.log("Fetching songs...");
+
   const res = await fetch(`${API}/api/library?type=music`, {
     headers: {
       Authorization: "Bearer " + TOKEN
@@ -76,6 +78,3 @@ async function start() {
 }
 
 start();
-
-
-console.log("Fetching songs...");
