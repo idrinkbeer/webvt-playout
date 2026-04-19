@@ -9,7 +9,7 @@ let currentProcess = null;
 async function getSongs() {
   console.log("Fetching songs...");
 
-  const res = await fetch(`${API}/library?type=music`, {
+  const res = await fetch(`${API_BASE}/library?type=music`), {
     headers: {
       Authorization: "Bearer " + TOKEN
     }
