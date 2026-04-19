@@ -1,8 +1,8 @@
 import fetch from "node-fetch";
 import { spawn } from "child_process";
 
-const API = "https://web-vt-api.miup3p.easypanel.host";
-const TOKEN = "YOUR_TOKEN_HERE"; // temporary (we’ll fix auth later)
+const API = process.env.API_BASE;
+const TOKEN = process.env.TOKEN;
 
 let currentProcess = null;
 
