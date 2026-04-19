@@ -166,8 +166,21 @@ async function start() {
 for (let i = 0; i < items.length; i++) {
   const current = items[i];
 
+  // ❌ skip sweepers as standalone items
+  if (current.type === "sweeper" || current.type === "vt") {
+    continue;
+  }
+
   // 🔍 find next REAL song (skip sweepers/vt)
   let nextIndex = i + 1;
+  let overlay = null;
+
+  // collect overlay if immediately after
+  if (items[i + 1] && (items[i + 1].type === "sweeper" || items[i + 1].type === "vt")) {
+    overlay = items[i + 1];
+    console.log("🎙 Overlay:", overlay.name);
+  }
+
   while (
     items[nextIndex] &&
     (items[nextIndex].type === "sweeper" || items[nextIndex].type === "vt")
@@ -182,20 +195,11 @@ for (let i = 0; i < items.length; i++) {
     ? `${API}/audio/song/${encodeName(next.name)}`
     : null;
 
-  // =====================
-  // 🎙 HANDLE OVERLAYS (sweeper/vt AFTER current)
-  // =====================
-  let overlay = null;
+  const overlayUrl = overlay
+    ? `${API}/audio/song/${encodeName(overlay.name)}`
+    : null;
 
-  if (items[i + 1] && (items[i + 1].type === "sweeper" || items[i + 1].type === "vt")) {
-    overlay = `${API}/audio/song/${encodeName(items[i + 1].name)}`;
-    console.log("🎙 Overlay:", items[i + 1].name);
-    i++; // consume sweeper/vt
-  }
-
-  // =====================
-  // 🎵 TIMING
-  // =====================
+  // 🎯 timing
   let delay = 20000;
 
   if (next) {
@@ -209,13 +213,11 @@ for (let i = 0; i < items.length; i++) {
     }
   }
 
-  // =====================
-  // 🎚 MIX
-  // =====================
+  // 🎚 mix properly
   await mixTracks({
     music: currentUrl,
     next: nextUrl,
-    voice: overlay,
+    voice: overlayUrl,
     delay
   });
 }
