@@ -1,10 +1,29 @@
 import fetch from "node-fetch";
 import { spawn } from "child_process";
+import http from "http";
 
 const API = process.env.API_BASE;
 const TOKEN = process.env.TOKEN;
+const PORT = process.env.PORT || 3000;
 
 let currentProcess = null;
+
+// =====================
+// KEEP CONTAINER ALIVE
+// =====================
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("OK");
+}).listen(PORT, () => {
+  console.log(`🌐 Health server running on port ${PORT}`);
+});
+
+// =====================
+// SAFE ENCODE
+// =====================
+function encodeName(name) {
+  return encodeURIComponent(name).replace(/'/g, "%27");
+}
 
 // =====================
 // FETCH LOG LIST
@@ -41,7 +60,7 @@ async function loadLog(filename) {
 }
 
 // =====================
-// PARSE ASC LOG (robust)
+// PARSE ASC LOG
 // =====================
 function parseASC(text) {
   const lines = text.split("\n");
@@ -50,11 +69,9 @@ function parseASC(text) {
   for (const line of lines) {
     if (!line) continue;
 
-    // find ALL mp3 matches in line
     const matches = line.match(/[^\\\/]+\.mp3/gi);
     if (!matches) continue;
 
-    // ALWAYS take the LAST match (real filename)
     const name = matches[matches.length - 1].trim();
 
     items.push({
@@ -67,20 +84,50 @@ function parseASC(text) {
 }
 
 // =====================
-// PLAY FILE
+// PLAY WITH OVERLAP
 // =====================
-function playFile(url) {
+function playFile(url, nextUrl = null) {
   return new Promise((resolve) => {
     console.log("▶ Playing:", url);
 
-    currentProcess = spawn("ffplay", [
+    const main = spawn("ffplay", [
       "-nodisp",
       "-autoexit",
       url
     ]);
 
-    currentProcess.on("exit", resolve);
-    currentProcess.on("error", resolve);
+    currentProcess = main;
+
+    let overlapStarted = false;
+
+    main.stderr.on("data", (data) => {
+      const msg = data.toString();
+
+      const match = msg.match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
+
+      if (match && nextUrl && !overlapStarted) {
+        const mins = parseInt(match[2]);
+        const secs = parseFloat(match[3]);
+        const total = mins * 60 + secs;
+
+        // start next 5 sec early
+        setTimeout(() => {
+          console.log("🔀 Starting next early:", nextUrl);
+
+          spawn("ffplay", [
+            "-nodisp",
+            "-autoexit",
+            nextUrl
+          ]);
+
+        }, Math.max((total - 5) * 1000, 0));
+
+        overlapStarted = true;
+      }
+    });
+
+    main.on("exit", resolve);
+    main.on("error", resolve);
   });
 }
 
@@ -107,32 +154,27 @@ async function start() {
       const items = parseASC(text);
 
       console.log(`🎵 ${items.length} playable items`);
+      console.log("First 5:", items.slice(0, 5));
 
       if (!items.length) {
-        console.log("⚠️ Nothing playable in log");
         await new Promise(r => setTimeout(r, 5000));
         continue;
       }
 
-      console.log("First 5:", items.slice(0, 5));
+      for (let i = 0; i < items.length; i++) {
+        const current = items[i];
+        const next = items[i + 1];
 
-for (let i = 0; i < items.length; i++) {
-  const current = items[i];
-  const next = items[i + 1];
+        const url = `${API}/audio/song/${encodeName(current.name)}`;
+        const nextUrl = next
+          ? `${API}/audio/song/${encodeName(next.name)}`
+          : null;
 
-  const url = `${API}/audio/song/${encodeName(current.name)}`;
-  const nextUrl = next
-    ? `${API}/audio/song/${encodeName(next.name)}`
-    : null;
-
-  await playFile(url, nextUrl);
-}
-        // future:
-        // sweeper / vtx / etc
+        await playFile(url, nextUrl);
       }
 
       console.log("🔁 Finished log, restarting...");
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 5000));
 
     } catch (err) {
       console.error("Playback error:", err);
