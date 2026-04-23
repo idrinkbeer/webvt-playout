@@ -1,6 +1,7 @@
 import fetch from "node-fetch";
 import { spawn } from "child_process";
 import http from "http";
+import fs from "fs";
 
 const API = process.env.API_BASE;
 const TOKEN = process.env.TOKEN;
@@ -12,30 +13,27 @@ let startedAt = null;
 let durationMs = 0;
 let queue = [];
 
+let player = null;
 
 // =====================
-// KEEP CONTAINER ALIVE
+// HTTP SERVER
 // =====================
-import fs from "fs";
-import path from "path";
-
 http.createServer((req, res) => {
 
-  if (req.url === "/status") {
+  if (req.url.startsWith("/status")) {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
       nowPlaying,
       nextPlaying,
       startedAt,
       durationMs,
-      queue // 👈 add this
+      queue
     }));
     return;
   }
 
-  // serve index.html
-  if (req.url === "/" || req.url === "/index.html") {
-    const file = fs.readFileSync("./index.html");
+  if (req.url === "/" || req.url.startsWith("/index")) {
+    const file = fs.readFileSync("./index.html", "utf-8");
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(file);
     return;
@@ -44,12 +42,59 @@ http.createServer((req, res) => {
   res.writeHead(404);
   res.end();
 
-}).listen(8080, "0.0.0.0", () => {
-  console.log("🌐 Server running on port 8080");
+}).listen(PORT, "0.0.0.0", () => {
+  console.log(`🌐 Server running on port ${PORT}`);
 
-  // 🚀 start playout AFTER server is ready
-  start();
+  startPlayer(); // 🔥 start audio output
+  start();       // 🔥 start scheduler
 });
+
+// =====================
+// AUDIO ENGINE
+// =====================
+function startPlayer() {
+  player = spawn("ffplay", [
+    "-nodisp",
+    "-autoexit",
+    "-f", "wav",
+    "-"
+  ]);
+
+  player.stdin.on("error", () => {});
+}
+
+function playTrack(url, delay = 0, volume = 1) {
+  setTimeout(() => {
+    console.log("▶️ Playing:", url);
+
+    const ffmpeg = spawn("ffmpeg", [
+      "-i", url,
+      "-filter:a", `volume=${volume}`,
+      "-f", "wav",
+      "-"
+    ]);
+
+    ffmpeg.stdout.pipe(player.stdin, { end: false });
+
+    ffmpeg.on("error", () => {});
+  }, delay);
+}
+
+function playOverlay(url, delay) {
+  setTimeout(() => {
+    console.log("🎙 Overlay:", url);
+
+    const ffmpeg = spawn("ffmpeg", [
+      "-i", url,
+      "-filter:a", "volume=1.2",
+      "-f", "wav",
+      "-"
+    ]);
+
+    ffmpeg.stdout.pipe(player.stdin, { end: false });
+
+  }, delay);
+}
 
 // =====================
 // HELPERS
@@ -59,7 +104,7 @@ function encodeName(name) {
 }
 
 // =====================
-// API CALLS
+// API
 // =====================
 async function getLogs() {
   const res = await fetch(`${API}/logs`, {
@@ -67,14 +112,9 @@ async function getLogs() {
   });
 
   const text = await res.text();
+  console.log("📡 /logs:", text);
 
-  console.log("📡 /logs response:", text);
-
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    throw new Error(`Invalid JSON from /logs: ${text}`);
-  }
+  return JSON.parse(text);
 }
 
 async function loadLog(filename) {
@@ -89,9 +129,11 @@ async function getAIR(name) {
     const res = await fetch(`${API}/music/tag/${encodeName(name)}`, {
       headers: { Authorization: "Bearer " + TOKEN }
     });
+
     if (!res.ok) return null;
+
     const data = await res.json();
-        console.log("🎧 RAW AIR:", data.air);
+    console.log("🎧 RAW AIR:", data.air);
 
     return parseAIR(data.air);
   } catch {
@@ -113,7 +155,6 @@ function parseASC(text) {
     const name = matches[matches.length - 1].trim().toLowerCase();
 
     let type = "song";
-
     if (name.includes("sweep")) type = "sweeper";
     if (name.includes("vt")) type = "vt";
 
@@ -121,84 +162,6 @@ function parseASC(text) {
   }
 
   return items;
-}
-
-// =====================
-// MIX ENGINE (CORE)
-// =====================
-function mixTracks({ music, next, voice = null, delay = 20000 }) {
-  return new Promise((resolve) => {
-    console.log("🎚 Mixing:", music, "→", next, voice ? "+ VT" : "");
-
-    const args = ["-i", music];
-
-    if (next) {
-      args.push("-itsoffset", (delay / 1000).toString(), "-i", next);
-    }
-
-if (voice) {
-  const voiceDelay = Math.max(delay - 3000, 2000); // play during ramp
-  args.push("-itsoffset", (voiceDelay / 1000).toString(), "-i", voice);
-}
-
-    let filter = "";
-
-    if (voice) {
-      filter = `
-[0:a][2:a]sidechaincompress=threshold=0.05:ratio=10:attack=5:release=300[a0];
-[a0]anull[aout]
-`.replace(/\n/g, "");
-    } else if (next) {
-const fade = 3; // seconds
-
-filter = `
-[0:a]afade=t=out:st=${(delay/1000)-fade}:d=${fade}[a0];
-[1:a]afade=t=in:st=0:d=${fade}[a1];
-[a0][a1]amix=inputs=2:duration=longest
-`.replace(/\n/g, "");
-    } else {
-      filter = "[0:a]anull";
-    }
-
-    const ffmpeg = spawn("ffmpeg", [
-      ...args,
-      "-filter_complex", filter,
-      "-f", "wav",
-      "-"
-    ]);
-
-    const ffplay = spawn("ffplay", [
-      "-nodisp",
-      "-autoexit",
-      "-"
-    ]);
-
-    // 🔥 PIPE SAFELY
-    ffmpeg.stdout.pipe(ffplay.stdin);
-
-    // 🔥 HANDLE PIPE BREAK
-    ffmpeg.stdout.on("error", (err) => {
-      if (err.code !== "EPIPE") {
-        console.error("FFmpeg pipe error:", err);
-      }
-    });
-
-    ffplay.stdin.on("error", (err) => {
-      if (err.code !== "EPIPE") {
-        console.error("FFplay stdin error:", err);
-      }
-    });
-
-    // 🔥 KILL ffmpeg when ffplay exits
-    ffplay.on("exit", () => {
-      if (!ffmpeg.killed) {
-        ffmpeg.kill("SIGKILL");
-      }
-      resolve();
-    });
-
-    ffmpeg.on("error", resolve);
-  });
 }
 
 // =====================
@@ -212,85 +175,72 @@ async function start() {
       const logs = await getLogs();
       const latest = logs.sort().reverse()[0];
 
-      console.log("📄 Using:", latest);
+      const text = await loadLog(latest);
+      const items = parseASC(text);
 
-const text = await loadLog(latest);
-const items = parseASC(text);
+      queue = items;
 
-queue = items; // ✅ correct place
+      for (let i = 0; i < items.length; i++) {
+        const current = items[i];
 
-      console.log(`🎵 ${items.length} items`);
+        if (current.type !== "song") continue;
 
-for (let i = 0; i < items.length; i++) {
-  const current = items[i];
+        let nextIndex = i + 1;
+        let overlay = null;
 
-  // ❌ skip sweepers as standalone items
-  if (current.type === "sweeper" || current.type === "vt") {
-    continue;
-  }
+        if (items[i + 1] && (items[i + 1].type === "vt" || items[i + 1].type === "sweeper")) {
+          overlay = items[i + 1];
+        }
 
-  // 🔍 find next REAL song (skip sweepers/vt)
-  let nextIndex = i + 1;
-  let overlay = null;
+        while (items[nextIndex] &&
+          (items[nextIndex].type === "vt" || items[nextIndex].type === "sweeper")) {
+          nextIndex++;
+        }
 
-  // collect overlay if immediately after
-  if (items[i + 1] && (items[i + 1].type === "sweeper" || items[i + 1].type === "vt")) {
-    overlay = items[i + 1];
-    console.log("🎙 Overlay:", overlay.name);
-  }
+        const next = items[nextIndex];
 
-  while (
-    items[nextIndex] &&
-    (items[nextIndex].type === "sweeper" || items[nextIndex].type === "vt")
-  ) {
-    nextIndex++;
-  }
+        const currentUrl = `${API}/audio/song/${encodeName(current.name)}`;
+        const nextUrl = next ? `${API}/audio/song/${encodeName(next.name)}` : null;
+        const overlayUrl = overlay ? `${API}/audio/song/${encodeName(overlay.name)}` : null;
 
-  const next = items[nextIndex];
+        const duration = await getDuration(currentUrl);
 
-  const currentUrl = `${API}/audio/song/${encodeName(current.name)}`;
-  const nextUrl = next
-    ? `${API}/audio/song/${encodeName(next.name)}`
-    : null;
+        let delay = 15000;
 
-  const overlayUrl = overlay
-    ? `${API}/audio/song/${encodeName(overlay.name)}`
-    : null;
+        if (next) {
+          const air = await getAIR(current.name);
 
-  // 🎯 timing
-let delay = 15000;
+          if (air && air.seg > 0) {
+            delay = air.seg * 1000;
+            console.log(`🎯 SEG: ${air.seg}s`);
+          } else {
+            delay = (duration - 8) * 1000;
+            console.log("⚠️ Fallback SEG");
+          }
+        }
 
-if (next) {
-  const duration = await getDuration(currentUrl);
-  const air = await getAIR(current.name);
+        nowPlaying = current;
+        nextPlaying = next;
+        startedAt = Date.now();
+        durationMs = duration * 1000;
 
-  if (air && air.seg > 0) {
-    delay = air.seg * 1000;
-    console.log(`🎯 SEG timing: ${air.seg}s`);
-  } else {
-    // smarter fallback
-    const fallback = Math.min(12, duration * 0.15);
-    delay = (duration - fallback) * 1000;
-    console.log("⚠️ Using smart fallback");
-  }
+        // ▶️ PLAY CURRENT
+        playTrack(currentUrl);
 
-  delay = Math.max(delay, 5000);
-}
+        // ▶️ PLAY NEXT AT SEG
+        if (nextUrl) {
+          playTrack(nextUrl, delay);
+        }
 
-nowPlaying = current;
-nextPlaying = next;
-startedAt = Date.now();
-const duration = await getDuration(currentUrl);
-durationMs = duration * 1000;
+        // 🎙 OVERLAY
+        if (overlayUrl) {
+          const voiceDelay = Math.max(delay - 3000, 2000);
+          playOverlay(overlayUrl, voiceDelay);
+        }
 
-  // 🎚 mix properly
-  await mixTracks({
-    music: currentUrl,
-    next: nextUrl,
-    voice: overlayUrl,
-    delay
-  });
-}
+        // ⏱ WAIT FULL SONG
+        await new Promise(r => setTimeout(r, duration * 1000));
+      }
 
       console.log("🔁 Restarting log...");
       await new Promise(r => setTimeout(r, 5000));
@@ -302,7 +252,9 @@ durationMs = duration * 1000;
   }
 }
 
-
+// =====================
+// DURATION
+// =====================
 async function getDuration(url) {
   return new Promise((resolve) => {
     const probe = spawn("ffprobe", [
@@ -320,22 +272,24 @@ async function getDuration(url) {
 
     probe.on("exit", () => {
       const seconds = parseFloat(output);
-      resolve(isNaN(seconds) ? 180 : seconds); // fallback
+      resolve(isNaN(seconds) ? 180 : seconds);
     });
   });
 }
 
-
+// =====================
+// AIR PARSER
+// =====================
 function parseAIR(airString) {
   if (!airString || !airString.startsWith("AIR#")) return null;
 
   try {
-    const start = parseInt(airString.substr(4, 6)) / 100;
-    const seg   = parseInt(airString.substr(10, 6)) / 100;
-    const end   = parseInt(airString.substr(16, 6)) / 100;
-    const intro = parseInt(airString.substr(22, 3)) / 10;
-
-    return { start, seg, end, intro };
+    return {
+      start: parseInt(airString.substr(4, 6)) / 100,
+      seg: parseInt(airString.substr(10, 6)) / 100,
+      end: parseInt(airString.substr(16, 6)) / 100,
+      intro: parseInt(airString.substr(22, 3)) / 10
+    };
   } catch {
     return null;
   }
