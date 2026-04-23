@@ -56,7 +56,7 @@ async function getAIR(name) {
     });
     if (!res.ok) return null;
     const data = await res.json();
-    return data.air || null;
+    return parseAIR(data.air);
   } catch {
     return null;
   }
@@ -99,14 +99,15 @@ function mixTracks({ music, next, voice = null, delay = 20000 }) {
       args.push("-itsoffset", (delay / 1000).toString(), "-i", next);
     }
 
-    if (voice) {
-      args.push("-i", voice);
-    }
+if (voice) {
+  const voiceDelay = delay - 3000; // play during ramp
+  args.push("-itsoffset", (voiceDelay / 1000).toString(), "-i", voice);
+}
 
     let filter = "";
 
     if (voice) {
-      filter = "[0:a]volume=0.5[a0];[2:a]volume=1.5[a2];[a0][a2]amix=inputs=2:duration=first";
+      filter = "[0:a][2:a]sidechaincompress=threshold=0.05:ratio=10:attack=5:release=300=inputs=2:duration=first";
     } else if (next) {
       filter = `
 [0:a]afade=t=out:st=${(delay/1000)-2}:d=2[a0];
@@ -213,34 +214,22 @@ for (let i = 0; i < items.length; i++) {
     : null;
 
   // 🎯 timing
-  let delay = 20000;
+let delay = 15000;
 
 if (next) {
   const duration = await getDuration(currentUrl);
   const air = await getAIR(current.name);
 
   if (air?.intro) {
-    delay = duration * 1000 - (air.intro * 1000);
+    delay = (duration - air.intro) * 1000;
     console.log(`🎯 Intro timing: ${air.intro}s`);
   } else {
-    delay = duration * 1000 - 8000; // fallback: last 8 seconds
-    console.log("⚠️ Using duration fallback");
+    delay = (duration - 8) * 1000;
+    console.log("⚠️ Using fallback (8s)");
   }
 
-  // safety clamp
   delay = Math.max(delay, 5000);
 }
-
-  if (next) {
-    const air = await getAIR(current.name);
-
-    if (air?.intro) {
-      delay = Math.max(air.intro * 1000, 5000);
-      console.log(`🎯 Intro: ${air.intro}s`);
-    } else {
-      console.log("⚠️ Using fallback mix delay");
-    }
-  }
 
   // 🎚 mix properly
   await mixTracks({
@@ -282,6 +271,19 @@ async function getDuration(url) {
       resolve(isNaN(seconds) ? 180 : seconds); // fallback
     });
   });
+}
+
+
+function parseAIR(airString) {
+  if (!airString || !airString.startsWith("AIR#")) return null;
+
+  try {
+    return {
+      intro: parseInt(airString.substr(4 + 6 + 6 + 6, 3)) / 10
+    };
+  } catch {
+    return null;
+  }
 }
 
 start();
