@@ -2,6 +2,7 @@ import fetch from "node-fetch";
 import { spawn } from "child_process";
 import http from "http";
 import fs from "fs";
+import { PassThrough } from "stream";
 
 const API = process.env.API_BASE;
 const TOKEN = process.env.TOKEN;
@@ -13,10 +14,6 @@ let startedAt = null;
 let durationMs = 0;
 let queue = [];
 let currentIndex = 0;
-
-let player = null;
-
-import { PassThrough } from "stream";
 
 const audioStream = new PassThrough();
 
@@ -39,19 +36,19 @@ http.createServer((req, res) => {
   }
 
   if (req.url.startsWith("/stream")) {
-  res.writeHead(200, {
-    "Content-Type": "audio/mpeg",
-    "Transfer-Encoding": "chunked"
-  });
+    res.writeHead(200, {
+      "Content-Type": "audio/mpeg",
+      "Transfer-Encoding": "chunked"
+    });
 
-  audioStream.pipe(res);
+    audioStream.pipe(res);
 
-  req.on("close", () => {
-    audioStream.unpipe(res);
-  });
+    req.on("close", () => {
+      audioStream.unpipe(res);
+    });
 
-  return;
-}
+    return;
+  }
 
   if (req.url === "/" || req.url.startsWith("/index")) {
     const file = fs.readFileSync("./index.html", "utf-8");
@@ -65,19 +62,18 @@ http.createServer((req, res) => {
 
 }).listen(PORT, "0.0.0.0", () => {
   console.log(`🌐 Server running on port ${PORT}`);
-
-  start();       // 🔥 start scheduler
+  start();
 });
 
 // =====================
-// AUDIO ENGINE
+// AUDIO ENGINE (FIXED)
 // =====================
-
-function playTrack(url, delay = 0) {
-  setTimeout(() => {
+function playTrack(url) {
+  return new Promise((resolve) => {
     console.log("▶️ Playing:", url);
 
     const ffmpeg = spawn("ffmpeg", [
+      "-re",                // 🔥 real-time playback
       "-i", url,
       "-f", "mp3",
       "-b:a", "128k",
@@ -86,24 +82,13 @@ function playTrack(url, delay = 0) {
 
     ffmpeg.stdout.pipe(audioStream, { end: false });
 
-    ffmpeg.on("error", () => {});
-  }, delay);
-}
+    ffmpeg.stderr.on("data", () => {}); // suppress noise
 
-function playOverlay(url, delay) {
-  setTimeout(() => {
-    console.log("🎙 Overlay:", url);
-
-    const ffmpeg = spawn("ffmpeg", [
-      "-i", url,
-      "-f", "mp3",
-      "-b:a", "128k",
-      "-"
-    ]);
-
-    ffmpeg.stdout.pipe(audioStream, { end: false });
-
-  }, delay);
+    ffmpeg.on("exit", () => {
+      console.log("⏹ Finished:", url);
+      resolve();
+    });
+  });
 }
 
 // =====================
@@ -134,23 +119,6 @@ async function loadLog(filename) {
   return await res.text();
 }
 
-async function getAIR(name) {
-  try {
-    const res = await fetch(`${API}/music/tag/${encodeName(name)}`, {
-      headers: { Authorization: "Bearer " + TOKEN }
-    });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    console.log("🎧 RAW AIR:", data.air);
-
-    return parseAIR(data.air);
-  } catch {
-    return null;
-  }
-}
-
 // =====================
 // PARSE LOG
 // =====================
@@ -175,7 +143,7 @@ function parseASC(text) {
 }
 
 // =====================
-// MAIN ENGINE
+// MAIN ENGINE (SEQUENTIAL FOR NOW)
 // =====================
 async function start() {
   while (true) {
@@ -191,70 +159,26 @@ async function start() {
       queue = items;
 
       for (let i = 0; i < items.length; i++) {
-      currentIndex = i;
-        const current = items[i];
+        currentIndex = i;
 
+        const current = items[i];
         if (current.type !== "song") continue;
 
-        let nextIndex = i + 1;
-        let overlay = null;
-
-        if (items[i + 1] && (items[i + 1].type === "vt" || items[i + 1].type === "sweeper")) {
-          overlay = items[i + 1];
-        }
-
-        while (items[nextIndex] &&
-          (items[nextIndex].type === "vt" || items[nextIndex].type === "sweeper")) {
-          nextIndex++;
-        }
-
-        const next = items[nextIndex];
-
         const currentUrl = `${API}/audio/song/${encodeName(current.name)}`;
-        const nextUrl = next ? `${API}/audio/song/${encodeName(next.name)}` : null;
-        const overlayUrl = overlay ? `${API}/audio/song/${encodeName(overlay.name)}` : null;
 
         const duration = await getDuration(currentUrl);
 
-        let delay = 15000;
-
-        if (next) {
-          const air = await getAIR(current.name);
-
-          if (air && air.seg > 0) {
-            delay = air.seg * 1000;
-            console.log(`🎯 SEG: ${air.seg}s`);
-          } else {
-            delay = (duration - 8) * 1000;
-            console.log("⚠️ Fallback SEG");
-          }
-        }
-
         nowPlaying = current;
-        nextPlaying = next;
+        nextPlaying = null;
         startedAt = Date.now();
         durationMs = duration * 1000;
 
-        // ▶️ PLAY CURRENT
-        playTrack(currentUrl);
-
-        // ▶️ PLAY NEXT AT SEG
-        if (nextUrl) {
-          playTrack(nextUrl, delay);
-        }
-
-        // 🎙 OVERLAY
-        if (overlayUrl) {
-          const voiceDelay = Math.max(delay - 3000, 2000);
-          playOverlay(overlayUrl, voiceDelay);
-        }
-
-        // ⏱ WAIT FULL SONG
-        await new Promise(r => setTimeout(r, duration * 1000));
+        // ▶️ PLAY FULL TRACK (NO CUTS)
+        await playTrack(currentUrl);
       }
 
       console.log("🔁 Restarting log...");
-      await new Promise(r => setTimeout(r, 5000));
+      await new Promise(r => setTimeout(r, 3000));
 
     } catch (err) {
       console.error("❌ Error:", err);
@@ -286,22 +210,4 @@ async function getDuration(url) {
       resolve(isNaN(seconds) ? 180 : seconds);
     });
   });
-}
-
-// =====================
-// AIR PARSER
-// =====================
-function parseAIR(airString) {
-  if (!airString || !airString.startsWith("AIR#")) return null;
-
-  try {
-    return {
-      start: parseInt(airString.substr(4, 6)) / 100,
-      seg: parseInt(airString.substr(10, 6)) / 100,
-      end: parseInt(airString.substr(16, 6)) / 100,
-      intro: parseInt(airString.substr(22, 3)) / 10
-    };
-  } catch {
-    return null;
-  }
 }
