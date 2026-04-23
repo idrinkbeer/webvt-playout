@@ -91,16 +91,19 @@ async function update() {
   const res = await fetch("/status");
   const data = await res.json();
 
-  const now = data.nowPlaying;
+  const start = Math.max(0, data.currentIndex - 5);
+  const end = data.currentIndex + 20;
 
   let running = 0;
 
-  const html = data.queue.slice(0, 25).map(item => {
+  const html = data.queue.slice(start, end).map((item, idx) => {
+    const realIndex = start + idx;
+
     let cls = "song";
     if (item.type === "vt") cls = "vt";
     if (item.type === "sweeper") cls = "sweeper";
 
-    const isNow = item.name === now?.name;
+    const isNow = realIndex === data.currentIndex;
 
     const row = `
       <div class="row ${cls} ${isNow ? "now" : ""}">
@@ -110,13 +113,21 @@ async function update() {
       </div>
     `;
 
-    running += 180; // placeholder
+    running += 180;
 
     return row;
   }).join("");
 
+  // ✅ render FIRST
   document.getElementById("log").innerHTML = html;
+
+  // ✅ then scroll
+  setTimeout(() => {
+    const el = document.querySelector(".now");
+    if (el) el.scrollIntoView({ block: "center" });
+  }, 50);
 }
+
 
 // clock
 setInterval(() => {
