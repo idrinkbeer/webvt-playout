@@ -109,7 +109,10 @@ if (voice) {
     let filter = "";
 
     if (voice) {
-      filter = "[0:a][2:a]sidechaincompress=threshold=0.05:ratio=10:attack=5:release=300=inputs=2:duration=first";
+      filter = `
+[0:a][2:a]sidechaincompress=threshold=0.05:ratio=10:attack=5:release=300[a0];
+[a0]anull[aout]
+`.replace(/\n/g, "");
     } else if (next) {
       filter = `
 [0:a]afade=t=out:st=${(delay/1000)-2}:d=2[a0];
