@@ -4,7 +4,7 @@ import http from "http";
 
 const API = process.env.API_BASE;
 const TOKEN = process.env.TOKEN;
-const PORT = process.env.PORT || 3000;
+const PORT = 8080;
 
 let nowPlaying = null;
 let nextPlaying = null;
@@ -44,8 +44,10 @@ http.createServer((req, res) => {
   res.writeHead(404);
   res.end();
 
-}).listen(PORT, "0.0.0.0", () => {
-  console.log(`🌐 Server running on port ${PORT}`);
+}).listen(8080, "0.0.0.0", () => {
+  console.log("🌐 Server running on port 8080");
+
+  // 🚀 start playout AFTER server is ready
   start();
 });
 
