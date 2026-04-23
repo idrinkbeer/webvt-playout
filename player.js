@@ -15,23 +15,35 @@ let durationMs = 0;
 // =====================
 // KEEP CONTAINER ALIVE
 // =====================
+import fs from "fs";
+import path from "path";
+
 http.createServer((req, res) => {
+
   if (req.url === "/status") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
       nowPlaying,
       nextPlaying,
       startedAt,
-      durationMs
+      durationMs,
+      queue // 👈 add this
     }));
     return;
   }
 
-  res.writeHead(200);
-  res.end("OK");
-}).listen(PORT, () => {
-  console.log(`🌐 Server running on port ${PORT}`);
-});
+  // serve index.html
+  if (req.url === "/" || req.url === "/index.html") {
+    const file = fs.readFileSync("./index.html");
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(file);
+    return;
+  }
+
+  res.writeHead(404);
+  res.end();
+
+}).listen(PORT);
 
 // =====================
 // HELPERS
