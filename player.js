@@ -12,6 +12,7 @@ let nextPlaying = null;
 let startedAt = null;
 let durationMs = 0;
 let queue = [];
+let currentIndex = 0;
 
 let player = null;
 
@@ -27,7 +28,8 @@ http.createServer((req, res) => {
       nextPlaying,
       startedAt,
       durationMs,
-      queue
+      queue,
+      currentIndex
     }));
     return;
   }
@@ -181,6 +183,7 @@ async function start() {
       queue = items;
 
       for (let i = 0; i < items.length; i++) {
+      currentIndex = i;
         const current = items[i];
 
         if (current.type !== "song") continue;
