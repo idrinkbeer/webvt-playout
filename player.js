@@ -44,7 +44,9 @@ http.createServer((req, res) => {
   res.writeHead(404);
   res.end();
 
-}).listen(PORT);
+}).listen(PORT, "0.0.0.0", () => {
+  console.log(`🌐 Server running on port ${PORT}`);
+});
 
 // =====================
 // HELPERS
