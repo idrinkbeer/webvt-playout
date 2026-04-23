@@ -6,14 +6,31 @@ const API = process.env.API_BASE;
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 
+let nowPlaying = null;
+let nextPlaying = null;
+let startedAt = null;
+let durationMs = 0;
+
+
 // =====================
 // KEEP CONTAINER ALIVE
 // =====================
 http.createServer((req, res) => {
+  if (req.url === "/status") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      nowPlaying,
+      nextPlaying,
+      startedAt,
+      durationMs
+    }));
+    return;
+  }
+
   res.writeHead(200);
   res.end("OK");
 }).listen(PORT, () => {
-  console.log(`🌐 Health server running on port ${PORT}`);
+  console.log(`🌐 Server running on port ${PORT}`);
 });
 
 // =====================
@@ -114,9 +131,11 @@ if (voice) {
 [a0]anull[aout]
 `.replace(/\n/g, "");
     } else if (next) {
-      filter = `
-[0:a]afade=t=out:st=${(delay/1000)-2}:d=2[a0];
-[1:a]afade=t=in:st=0:d=2[a1];
+const fade = 3; // seconds
+
+filter = `
+[0:a]afade=t=out:st=${(delay/1000)-fade}:d=${fade}[a0];
+[1:a]afade=t=in:st=0:d=${fade}[a1];
 [a0][a1]amix=inputs=2:duration=first
 `.replace(/\n/g, "");
     } else {
@@ -237,6 +256,11 @@ if (next) {
 
   delay = Math.max(delay, 5000);
 }
+
+nowPlaying = current;
+nextPlaying = next;
+startedAt = Date.now();
+durationMs = delay;
 
   // 🎚 mix properly
   await mixTracks({
