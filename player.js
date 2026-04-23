@@ -46,6 +46,7 @@ http.createServer((req, res) => {
 
 }).listen(PORT, "0.0.0.0", () => {
   console.log(`🌐 Server running on port ${PORT}`);
+  start();
 });
 
 // =====================
@@ -336,5 +337,3 @@ function parseAIR(airString) {
     return null;
   }
 }
-
-start();
