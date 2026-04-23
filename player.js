@@ -30,7 +30,16 @@ async function getLogs() {
   const res = await fetch(`${API}/logs`, {
     headers: { Authorization: "Bearer " + TOKEN }
   });
-  return await res.json();
+
+  const text = await res.text();
+
+  console.log("📡 /logs response:", text);
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Invalid JSON from /logs: ${text}`);
+  }
 }
 
 async function loadLog(filename) {
