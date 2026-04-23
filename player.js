@@ -16,6 +16,10 @@ let currentIndex = 0;
 
 let player = null;
 
+import { PassThrough } from "stream";
+
+const audioStream = new PassThrough();
+
 // =====================
 // HTTP SERVER
 // =====================
@@ -34,6 +38,21 @@ http.createServer((req, res) => {
     return;
   }
 
+  if (req.url.startsWith("/stream")) {
+  res.writeHead(200, {
+    "Content-Type": "audio/mpeg",
+    "Transfer-Encoding": "chunked"
+  });
+
+  audioStream.pipe(res);
+
+  req.on("close", () => {
+    audioStream.unpipe(res);
+  });
+
+  return;
+}
+
   if (req.url === "/" || req.url.startsWith("/index")) {
     const file = fs.readFileSync("./index.html", "utf-8");
     res.writeHead(200, { "Content-Type": "text/html" });
@@ -47,42 +66,25 @@ http.createServer((req, res) => {
 }).listen(PORT, "0.0.0.0", () => {
   console.log(`🌐 Server running on port ${PORT}`);
 
-  startPlayer(); // 🔥 start audio output
   start();       // 🔥 start scheduler
 });
 
 // =====================
 // AUDIO ENGINE
 // =====================
-function startPlayer() {
-  console.log("📡 Starting stream on :8000");
 
-  player = spawn("ffmpeg", [
-    "-f", "lavfi",
-    "-i", "anullsrc=r=44100:cl=stereo",
-
-    "-f", "mp3",
-    "-b:a", "128k",
-    "-content_type", "audio/mpeg",
-    "-listen", "1",
-    "http://0.0.0.0:8000/stream"
-  ]);
-
-  player.stdin.on("error", () => {});
-}
-
-function playTrack(url, delay = 0, volume = 1) {
+function playTrack(url, delay = 0) {
   setTimeout(() => {
     console.log("▶️ Playing:", url);
 
     const ffmpeg = spawn("ffmpeg", [
       "-i", url,
-      "-filter:a", `volume=${volume}`,
-      "-f", "wav",
+      "-f", "mp3",
+      "-b:a", "128k",
       "-"
     ]);
 
-    ffmpeg.stdout.pipe(player.stdin, { end: false });
+    ffmpeg.stdout.pipe(audioStream, { end: false });
 
     ffmpeg.on("error", () => {});
   }, delay);
@@ -94,12 +96,12 @@ function playOverlay(url, delay) {
 
     const ffmpeg = spawn("ffmpeg", [
       "-i", url,
-      "-filter:a", "volume=1.2",
-      "-f", "wav",
+      "-f", "mp3",
+      "-b:a", "128k",
       "-"
     ]);
 
-    ffmpeg.stdout.pipe(player.stdin, { end: false });
+    ffmpeg.stdout.pipe(audioStream, { end: false });
 
   }, delay);
 }
