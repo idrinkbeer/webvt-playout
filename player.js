@@ -10,6 +10,7 @@ let nowPlaying = null;
 let nextPlaying = null;
 let startedAt = null;
 let durationMs = 0;
+let queue = [];
 
 
 // =====================
@@ -208,8 +209,10 @@ async function start() {
 
       console.log("📄 Using:", latest);
 
-      const text = await loadLog(latest);
-      const items = parseASC(text);
+const text = await loadLog(latest);
+const items = parseASC(text);
+
+queue = items; // ✅ correct place
 
       console.log(`🎵 ${items.length} items`);
 
