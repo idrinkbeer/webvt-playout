@@ -2,68 +2,78 @@
 
 <html>
 <head>
-  <title>AIR Monitor</title>
+  <title>AIR Log</title>
+
   <style>
     body {
-      background: #000;
-      color: #0f0;
-      font-family: Arial;
+      background: black;
+      color: white;
+      font-family: monospace;
+      margin: 0;
     }
 
-```
-.container {
-  padding: 20px;
-}
+    .header {
+      display: flex;
+      padding: 10px;
+      background: #111;
+      border-bottom: 2px solid #333;
+    }
 
-.now {
-  font-size: 32px;
-  color: #0f0;
-}
+    .header div {
+      margin-right: 20px;
+    }
 
-.next {
-  font-size: 20px;
-  color: #0ff;
-}
+    .log {
+      height: 100vh;
+      overflow-y: auto;
+    }
 
-.bar {
-  height: 20px;
-  background: #222;
-  margin-top: 10px;
-  position: relative;
-}
+    .row {
+      display: flex;
+      padding: 6px 10px;
+      border-bottom: 1px solid #222;
+    }
 
-.progress {
-  height: 100%;
-  background: lime;
-  width: 0%;
-}
+    .row:nth-child(even) {
+      background: #111;
+    }
 
-.queue {
-  margin-top: 20px;
-  font-size: 14px;
-}
+    .now {
+      background: #3b00ff;
+      color: white;
+      font-weight: bold;
+    }
 
-.vt {
-  color: orange;
-}
-```
+    .time {
+      width: 80px;
+      color: #0ff;
+    }
+
+    .title {
+      flex: 1;
+    }
+
+    .type {
+      width: 80px;
+      text-align: right;
+    }
+
+    .song { color: #9cf; }
+    .vt { color: orange; }
+    .sweeper { color: red; }
 
   </style>
-</head>
-<body>
-  <div class="container">
-    <div class="now" id="now">Loading...</div>
-    <div class="next" id="next"></div>
 
-```
-<div class="bar">
-  <div class="progress" id="progress"></div>
+</head>
+
+<body>
+
+<div class="header">
+  <div>AIR LOG</div>
+  <div id="clock"></div>
 </div>
 
-<div class="queue" id="queue"></div>
-```
-
-  </div>
+<div class="log" id="log"></div>
 
 <script>
 function format(name) {
@@ -71,61 +81,52 @@ function format(name) {
   return name.replace(".mp3", "").replace(/%20/g, " ");
 }
 
+function time(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return m + ":" + s.toString().padStart(2, "0");
+}
+
 async function update() {
   const res = await fetch("/status");
   const data = await res.json();
 
   const now = data.nowPlaying;
-  const next = data.nextPlaying;
 
-  document.getElementById("now").innerText =
-    "NOW: " + format(now?.name);
+  let running = 0;
 
-  document.getElementById("next").innerText =
-    "NEXT: " + format(next?.name);
+  const html = data.queue.slice(0, 25).map(item => {
+    let cls = "song";
+    if (item.type === "vt") cls = "vt";
+    if (item.type === "sweeper") cls = "sweeper";
 
-  // progress bar
-  if (data.startedAt && data.durationMs) {
-    const elapsed = Date.now() - data.startedAt;
-    const percent = Math.min((elapsed / data.durationMs) * 100, 100);
-    document.getElementById("progress").style.width = percent + "%";
-  }
+    const isNow = item.name === now?.name;
 
-  if (data.startedAt && data.durationMs) {
-  const remaining = Math.max(
-    0,
-    Math.floor((data.durationMs - (Date.now() - data.startedAt)) / 1000)
-  );
+    const row = `
+      <div class="row ${cls} ${isNow ? "now" : ""}">
+        <div class="time">${time(running)}</div>
+        <div class="title">${format(item.name)}</div>
+        <div class="type">${item.type}</div>
+      </div>
+    `;
 
-  document.getElementById("next").innerText += ` | SEG in ${remaining}s`;
+    running += 180; // placeholder
+
+    return row;
+  }).join("");
+
+  document.getElementById("log").innerHTML = html;
 }
 
-  // 🔥 queue display
-  if (data.queue) {
-    const html = data.queue.slice(0, 12).map(item => {
-      let cls = "song";
-      if (item.type === "vt") cls = "vt";
-      if (item.type === "sweeper") cls = "sweeper";
-
-      const isNow = item.name === now?.name;
-
-      return `<div style="
-        padding:6px;
-        background:${isNow ? '#3b00ff' : 'transparent'};
-        color:${isNow ? '#fff' : '#9cf'};
-      ">
-        ${format(item.name)}
-      </div>`;
-    }).join("");
-
-    document.getElementById("queue").innerHTML = html;
-  }
-}
+// clock
+setInterval(() => {
+  document.getElementById("clock").innerText =
+    new Date().toLocaleTimeString();
+}, 1000);
 
 setInterval(update, 1000);
 update();
 </script>
-
 
 </body>
 </html>
