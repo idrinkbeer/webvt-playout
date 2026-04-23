@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>AIR Monitor</title>
+  <style>
+    body {
+      background: #000;
+      color: #0f0;
+      font-family: Arial;
+    }
+
+```
+.container {
+  padding: 20px;
+}
+
+.now {
+  font-size: 32px;
+  color: #0f0;
+}
+
+.next {
+  font-size: 20px;
+  color: #0ff;
+}
+
+.bar {
+  height: 20px;
+  background: #222;
+  margin-top: 10px;
+  position: relative;
+}
+
+.progress {
+  height: 100%;
+  background: lime;
+  width: 0%;
+}
+
+.queue {
+  margin-top: 20px;
+  font-size: 14px;
+}
+
+.vt {
+  color: orange;
+}
+```
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="now" id="now">Loading...</div>
+    <div class="next" id="next"></div>
+
+```
+<div class="bar">
+  <div class="progress" id="progress"></div>
+</div>
+
+<div class="queue" id="queue"></div>
+```
+
+  </div>
+
+<script>
+async function update() {
+  const res = await fetch("/status");
+  const data = await res.json();
+
+  const now = data.nowPlaying?.name || "None";
+  const next = data.nextPlaying?.name || "";
+
+  document.getElementById("now").innerText = "NOW: " + now;
+  document.getElementById("next").innerText = "NEXT: " + next;
+
+  // progress bar
+  if (data.startedAt && data.durationMs) {
+    const elapsed = Date.now() - data.startedAt;
+    const percent = Math.min((elapsed / data.durationMs) * 100, 100);
+    document.getElementById("progress").style.width = percent + "%";
+  }
+}
+
+setInterval(update, 1000);
+update();
+</script>
+
+</body>
+</html>
