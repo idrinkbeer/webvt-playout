@@ -280,7 +280,8 @@ if (next) {
 nowPlaying = current;
 nextPlaying = next;
 startedAt = Date.now();
-durationMs = delay;
+const duration = await getDuration(currentUrl);
+durationMs = duration * 1000;
 
   // 🎚 mix properly
   await mixTracks({
