@@ -55,11 +55,17 @@ http.createServer((req, res) => {
 // AUDIO ENGINE
 // =====================
 function startPlayer() {
-  player = spawn("ffplay", [
-    "-nodisp",
-    "-autoexit",
-    "-f", "wav",
-    "-"
+  console.log("📡 Starting stream on :8000");
+
+  player = spawn("ffmpeg", [
+    "-f", "lavfi",
+    "-i", "anullsrc=r=44100:cl=stereo",
+
+    "-f", "mp3",
+    "-b:a", "128k",
+    "-content_type", "audio/mpeg",
+    "-listen", "1",
+    "http://0.0.0.0:8000/stream"
   ]);
 
   player.stdin.on("error", () => {});
