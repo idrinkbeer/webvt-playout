@@ -154,7 +154,7 @@ const fade = 3; // seconds
 filter = `
 [0:a]afade=t=out:st=${(delay/1000)-fade}:d=${fade}[a0];
 [1:a]afade=t=in:st=0:d=${fade}[a1];
-[a0][a1]amix=inputs=2:duration=first
+[a0][a1]amix=inputs=2:duration=longest
 `.replace(/\n/g, "");
     } else {
       filter = "[0:a]anull";
