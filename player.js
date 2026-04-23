@@ -57,6 +57,7 @@ async function getAIR(name) {
     if (!res.ok) return null;
     const data = await res.json();
     return parseAIR(data.air);
+    console.log("🎧 RAW AIR:", data.air);
   } catch {
     return null;
   }
