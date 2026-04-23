@@ -91,6 +91,15 @@ async function update() {
     document.getElementById("progress").style.width = percent + "%";
   }
 
+  if (data.startedAt && data.durationMs) {
+  const remaining = Math.max(
+    0,
+    Math.floor((data.durationMs - (Date.now() - data.startedAt)) / 1000)
+  );
+
+  document.getElementById("next").innerText += ` | SEG in ${remaining}s`;
+}
+
   // 🔥 queue display
   if (data.queue) {
     const html = data.queue.slice(0, 12).map(item => {
