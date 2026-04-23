@@ -102,7 +102,7 @@ function mixTracks({ music, next, voice = null, delay = 20000 }) {
     }
 
 if (voice) {
-  const voiceDelay = delay - 3000; // play during ramp
+  const voiceDelay = Math.max(delay - 3000, 2000); // play during ramp
   args.push("-itsoffset", (voiceDelay / 1000).toString(), "-i", voice);
 }
 
@@ -225,12 +225,14 @@ if (next) {
   const duration = await getDuration(currentUrl);
   const air = await getAIR(current.name);
 
-  if (air?.intro) {
-    delay = (duration - air.intro) * 1000;
-    console.log(`🎯 Intro timing: ${air.intro}s`);
+  if (air && air.seg > 0) {
+    delay = air.seg * 1000;
+    console.log(`🎯 SEG timing: ${air.seg}s`);
   } else {
-    delay = (duration - 8) * 1000;
-    console.log("⚠️ Using fallback (8s)");
+    // smarter fallback
+    const fallback = Math.min(12, duration * 0.15);
+    delay = (duration - fallback) * 1000;
+    console.log("⚠️ Using smart fallback");
   }
 
   delay = Math.max(delay, 5000);
@@ -283,9 +285,12 @@ function parseAIR(airString) {
   if (!airString || !airString.startsWith("AIR#")) return null;
 
   try {
-    return {
-      intro: parseInt(airString.substr(4 + 6 + 6 + 6, 3)) / 10
-    };
+    const start = parseInt(airString.substr(4, 6)) / 100;
+    const seg   = parseInt(airString.substr(10, 6)) / 100;
+    const end   = parseInt(airString.substr(16, 6)) / 100;
+    const intro = parseInt(airString.substr(22, 3)) / 10;
+
+    return { start, seg, end, intro };
   } catch {
     return null;
   }
